@@ -14,6 +14,7 @@ import { newMutationBits } from "./mutationMask";
 import { makeOwned, normalizeZombieName, OwnedZombie, RosterEntry } from "./types";
 import { ZombieUnit } from "./ZombieUnit";
 import { ZombiePot } from "./ZombiePot";
+import type { PotTimerProjection } from "../net/protocol";
 
 /** Mausoleum storage-slot capacity of the BASE building. Every tier above it is
  *  authored in placeables.json (`zombieSlots`), so the live cap comes from the
@@ -569,6 +570,18 @@ export class ZombieField {
   finishCombineNow(potId?: string): boolean {
     const id = potId ?? this.field.zombiePotId();
     return id ? this.potFor(id).finishNow() : false;
+  }
+
+  /** Apply server timers after parent reservations have been reconciled. Preserve
+   * every snapshot field used by normal preview/collection, including slot order. */
+  reconcilePotTimers(timers: Record<string, PotTimerProjection>): void {
+    for (const [id, timer] of Object.entries(timers)) {
+      const pot = this.pots.get(id);
+      const job = pot?.pending;
+      if (!pot || !job || job.parentAId === job.parentBId || ![timer.parentAId, timer.parentBId].includes(job.parentAId ?? "") ||
+          ![timer.parentAId, timer.parentBId].includes(job.parentBId ?? "")) continue;
+      pot.restore({ ...job, startedAt: timer.startedAt, finishAt: timer.finishAt });
+    }
   }
 
   /** Can a finished combine be sent straight to the Mausoleum? Needs the building

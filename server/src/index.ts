@@ -48,7 +48,7 @@ import { MAX_FUNCTIONAL_OBJECTS } from "./v3/engine";
 import {
   MAX_PRESENTATION_BYTES, MAX_PRESENTATION_FALLEN, REQUEST_ENVELOPE_BYTES,
 } from "./presentationLimits";
-import { CLIENT_INTEGRITY_VERSION, COMMAND_BATCH_LIMIT, EPIC_BOSS_TOKEN_GRANT_LIMIT, FARM_BULK_LIMIT, GAMEPLAY_PROTOCOL, type CommandBatchRequest, type GameplayCommand, type PresentationRequest } from "../../src/net/protocol";
+import { CLIENT_INTEGRITY_VERSION, COMMAND_BATCH_LIMIT, EPIC_BOSS_TOKEN_GRANT_LIMIT, FARM_BULK_LIMIT, GAMEPLAY_PROTOCOL, validGrowthAdvance, type CommandBatchRequest, type GameplayCommand, type PresentationRequest } from "../../src/net/protocol";
 import * as v3 from "./v3/db";
 import * as v3Raid from "./v3/raid";
 import * as v3EpicBoss from "./v3/epicBoss";
@@ -792,6 +792,7 @@ export const validGameplayCommand = (value: unknown): value is GameplayCommand =
   const command = value as Record<string, unknown>;
   switch (command.type) {
     case "writer.claim": return true;
+    case "farm.advance_growth": return validGrowthAdvance(command.milliseconds);
     case "farm.plow": case "farm.harvest": case "farm.remove":
       return commandInt(command.oc) && commandInt(command.or);
     case "farm.move":
@@ -827,7 +828,8 @@ export const validGameplayCommand = (value: unknown): value is GameplayCommand =
     case "power.use":
       return commandString(command.key) && (command.oc === undefined || commandInt(command.oc)) &&
         (command.or === undefined || commandInt(command.or)) &&
-        (command.target === undefined || command.target === "zombie_pot");
+        (command.target === undefined || command.target === "zombie_pot") &&
+        (command.potId === undefined || commandString(command.potId));
     case "object.buy":
       return commandString(command.catalogKey) &&
         (command.clientInstanceId === undefined || commandString(command.clientInstanceId));
@@ -1027,6 +1029,7 @@ app.post("/bootstrap", async (c) => {
   const payload = {
     ...response,
     pvpEnabled: pvpOn,
+    growthTimeControlEnabled: c.env.GROWTH_TIME_CONTROL === "1",
     social: { ...response.social, lastInvadedAt },
   };
   metric("bootstrap", accountId, started, { payloadBytes: JSON.stringify(payload).length });
@@ -1057,7 +1060,7 @@ app.post("/commands", async (c) => {
   if (body.protocolVersion < minProtocolVersion(c.env)) {
     return c.json({ error: "update_required", minimumProtocolVersion: minProtocolVersion(c.env) }, 426);
   }
-  const result = await v3.applyBatch(c.env.DB, accountId, body, Date.now());
+  const result = await v3.applyBatch(c.env.DB, accountId, body, Date.now(), c.env.GROWTH_TIME_CONTROL === "1");
   metric("commands", accountId, started, {
     build: c.req.header("X-Client-Build") ?? "unknown",
     commands: body.commands.length,

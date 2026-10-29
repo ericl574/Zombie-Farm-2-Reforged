@@ -97,6 +97,20 @@
 #hud .play-status.reconnecting { background: #8a5b16; }
 #hud .play-status.working { background: #3f6b2a; }
 #hud .play-status.cached { background: #6b4b2a; }
+#hud .growth-time-button { position: absolute; top: calc(100% + 4px); right: 0;
+  min-width: 54px; min-height: 44px; border: 2px solid #2f1d0d; border-radius: 12px;
+  background: #492b16; color: #fff4c7; font: 700 13px system-ui, sans-serif; cursor: pointer; }
+#hud .growth-time-button[hidden] { display: none; }
+#hud .growth-time-button:disabled { opacity: .5; cursor: default; }
+#hud .growth-time-button:focus-visible { outline: 2px solid #d9ff9b; }
+#hud .growth-time-panel { width: min(360px, calc(100vw - 48px)); }
+#hud .growth-time-panel p { font-size: 14px; line-height: 1.4; }
+#hud .growth-time-presets { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+#hud .growth-time-panel button { min-height: 44px; cursor: pointer; }
+#hud .growth-time-panel form { display: flex; gap: 8px; align-items: end; margin-top: 16px; }
+#hud .growth-time-panel label { flex: 1; min-width: 0; font-size: 14px; }
+#hud .growth-time-panel input { display: block; width: 100%; box-sizing: border-box;
+  min-height: 44px; margin-top: 6px; font-size: 16px; }
 /* profile button: a person icon just right of the nameplate; opens the Profile menu.
    Stays visible on mobile (where the nameplate is hidden) so the menu is reachable. */
 #hud .profbtn { pointer-events: auto; flex: 0 0 auto; width: 36px; height: 36px; padding: 3px;

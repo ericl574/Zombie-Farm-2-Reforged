@@ -120,6 +120,7 @@ import { compactGold } from "./ui/compactNumber";
 import { lifeForceProgress } from "./lifeForce";
 import { openLifeForce as openLifeForcePanel } from "./ui/panels/lifeForce";
 import { openDropTable } from "./ui/panels/dropTable";
+import { openGrowthTime } from "./ui/panels/growthTime";
 // View-model types + the grave classifier live in hudTypes so panel modules can
 // import them without depending on the whole Hud class. Re-exported below for the
 // existing `from "./hud"` importers (main.ts).
@@ -332,6 +333,8 @@ export class Hud {
   /** Pressing the online sync indicator. Wired by main.ts to send the pending command
    *  batch at once; unset (local farm, visiting) the badge opens the Account menu. */
   onSyncRequested: (() => void) | null = null;
+  onGrowthAdvance: ((milliseconds: number) => boolean) | null = null;
+  private growthTimeButton!: HTMLButtonElement;
   // Rotate tool tap: main handles it contextually (flip the placement ghost / the
   // carried object / enter the standalone rotate mode). Null falls back to setMode.
   onRotateTool: (() => void) | null = null;
@@ -827,7 +830,18 @@ export class Hud {
     prof.appendChild(profImg);
     prof.onclick = () => this.openProfiles();
 
-    bar.append(gear, chips, spacer, ...(devHot ? [devHot] : []), this.playStatusEl, name, prof);
+    this.growthTimeButton = document.createElement("button");
+    this.growthTimeButton.type = "button";
+    this.growthTimeButton.className = "growth-time-button";
+    this.growthTimeButton.textContent = "Time";
+    this.growthTimeButton.hidden = true;
+    this.growthTimeButton.setAttribute("aria-label", "Advance crop, zombie, tree and Zombie Pot growth time");
+    this.growthTimeButton.onclick = () => openGrowthTime(this.el, (milliseconds) => {
+      if (!this.onGrowthAdvance?.(milliseconds)) return false;
+      this.showToast("Growth time queued — syncing…");
+      return true;
+    });
+    bar.append(gear, chips, spacer, ...(devHot ? [devHot] : []), this.playStatusEl, name, prof, this.growthTimeButton);
     this.el.appendChild(bar);
     this.fitChips = chips;
     this.fitVals = [this.goldEl, this.brainsEl, this.zombiesEl];
@@ -1090,6 +1104,10 @@ export class Hud {
     }
   }
 
+  setGrowthTimeControl(enabled: boolean): void {
+    this.growthTimeButton.hidden = this.playMode !== "online" || !enabled;
+  }
+
   setPlayStatus(
     mode: PlayMode,
     state: "synced" | "saving" | "working" | "reconnecting" | "cached" = "synced",
@@ -1116,6 +1134,7 @@ export class Hud {
       `${mode === "local" ? "Local Farm" : "Online Farm"}: ${statusLabel}. ${action}`
     );
     this.playStatusEl.title = `${statusLabel}. ${action}`;
+    this.growthTimeButton.disabled = mode !== "online" || state === "reconnecting" || state === "cached";
   }
 
   // Brief top-center banner for quest completion (messageComplete).

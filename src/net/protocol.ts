@@ -22,6 +22,10 @@ export const PRESENTATION_WINDOW_MS = 60_000;
  *  "I can't start battles when I have a lot of planting/plowing queued". One stroke is now
  *  one command. */
 export const FARM_BULK_LIMIT = 289;
+/** Custom growth advances are positive whole milliseconds, at most one year per press. */
+export const MAX_GROWTH_ADVANCE_MS = 365 * 24 * 60 * 60 * 1000;
+export const validGrowthAdvance = (ms: unknown): ms is number =>
+  typeof ms === "number" && Number.isSafeInteger(ms) && ms > 0 && ms <= MAX_GROWTH_ADVANCE_MS;
 
 export type CommandStatus = "applied" | "duplicate" | "rejected" | "dependency_failed";
 
@@ -47,6 +51,8 @@ export interface CommandResult {
 
 export type GameplayCommand =
   | { type: "writer.claim" }
+  /** Private-server control: advances crop, tree production and active combining timers only. */
+  | { type: "farm.advance_growth"; milliseconds: number }
   | { type: "farm.plow"; oc: number; or: number }
   | { type: "farm.plant"; oc: number; or: number; cropKey: string; fertilized?: boolean }
   // Bulk forms of the farm commands a stroke produces by the hundred — plow and plant
@@ -74,7 +80,7 @@ export type GameplayCommand =
    *  its timers and its value are carried across untouched. */
   | { type: "farm.move"; oc: number; or: number; toOc: number; toOr: number }
   | { type: "power.buy"; key: string }
-  | { type: "power.use"; key: string; oc?: number; or?: number; target?: "zombie_pot" }
+  | { type: "power.use"; key: string; oc?: number; or?: number; target?: "zombie_pot"; potId?: string }
   | { type: "object.buy"; catalogKey: string; clientInstanceId?: string }
   | { type: "object.refund"; instanceId: string }
   | { type: "object.upgrade"; instanceId: string; catalogKey: string }
@@ -324,6 +330,9 @@ export interface GameplayProjection {
    *  which is ordered by creation and so cannot be read as slot order. Server-owned:
    *  entries appear on `roster.combine_start` and are dropped on `roster.combine`. */
   potSlots?: Record<string, string>;
+  /** Optional for old saves/Workers. Server epochs, bound to the current parents so
+   *  an old job's timer cannot be applied to a new combine in the same building. */
+  potTimers?: Record<string, PotTimerProjection>;
   raids: {
     progress: Record<string, number>;
     /** Dual-invasion ladder: highest tier CLEARED per raid id. Absent on a server that
@@ -337,6 +346,13 @@ export interface GameplayProjection {
     costPerZombie: 1;
   } | null;
   epicBoss?: EpicBossProjection | null;
+}
+
+export interface PotTimerProjection {
+  parentAId: string;
+  parentBId: string;
+  startedAt: number;
+  finishAt: number;
 }
 
 export interface PresentationProjection {
@@ -407,6 +423,8 @@ export interface BootstrapResponse {
    *  no client redeploy, no dead button while the feature is parked. Optional —
    *  an older Worker simply doesn't send it, which reads as "off". */
   pvpEnabled?: boolean;
+  /** Opt-in private-server growth control. Absent on older/public Workers = disabled. */
+  growthTimeControlEnabled?: boolean;
   mutationsEnabled: boolean;
   accountVersion: number;
   writerGeneration: number;

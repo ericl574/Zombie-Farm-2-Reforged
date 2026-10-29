@@ -216,7 +216,7 @@ export class GameState {
    *  purely local. */
   onInventory:
     | ((
-        action: { type: "buy" | "use" | "grant"; key: string; qty?: number; unitId?: string; localZombieHarvests?: { id: string; oc: number; or: number }[]; oc?: number; or?: number; target?: "zombie_pot" },
+        action: { type: "buy" | "use" | "grant"; key: string; qty?: number; unitId?: string; localZombieHarvests?: { id: string; oc: number; or: number }[]; oc?: number; or?: number; target?: "zombie_pot"; potId?: string },
         optimistic: { count: number; gold?: number; brains?: number; xp?: number }
       ) => void)
     | null = null;

@@ -40,6 +40,17 @@ const renderableField = (extra: Partial<Record<string, unknown>> = {}): Field =>
 } as unknown as Field);
 
 describe("ZombieField combine save migration", () => {
+  it("adopts synchronized timers without changing snapshots or accepting timers from a different job", () => {
+    const zombies = new ZombieField({} as GameAssets, renderableField(), new GameState(), () => undefined);
+    const job = { ...legacyJob(), nameA: "Keeper", colorA: [20, 40, 60] as [number, number, number] };
+    zombies.restorePots({ pot: job });
+    const original = zombies.potFor("pot").serialize();
+    zombies.reconcilePotTimers({ pot: { parentAId: "parent-b", parentBId: "parent-a", startedAt: 100, finishAt: 200 } });
+    expect(zombies.potFor("pot").serialize()).toEqual({ ...original, startedAt: 100, finishAt: 200 });
+    zombies.reconcilePotTimers({ pot: { parentAId: "new-a", parentBId: "new-b", startedAt: 0, finishAt: 0 } });
+    expect(zombies.potFor("pot").pending?.finishAt).toBe(200);
+    expect(zombies.potFor("pot").pending?.nameA).toBe("Keeper");
+  });
   it("hydrates legacy jobs and falls back when the multi-pot map is empty", () => {
     const state = new GameState();
     state.xp = 20_500;

@@ -263,3 +263,27 @@ and prod's are declared separately). Live at
   writer generation and makes the replaced device read-only.
 - Repair balance, gameplay, quest, farm/object, roster, and raid state together. Restoring
   an individual JSON document can create an inconsistent or exploitable account.
+
+## Private Online Farm growth control
+
+Set the Worker variable `GROWTH_TIME_CONTROL = "1"` on your private server to enable
+the Online Farm **Time** button (+1h, +4h, +8h, +24h, or custom hours from 0.01 to
+8760). The default/staging configuration enables it; production does not. Other
+servers and older Workers leave the button hidden. Deploy the updated client and
+Worker to your own hosting only, after approval; no database migration is needed.
+
+Each advance backdates currently planted crop/zombie timestamps, placed tree
+production deadlines, and running Zombie Pot timers, stopping at ready. The
+existing D1 farm/object documents and an optional `potTimers` field in the gameplay
+JSON persist these changes without a schema migration. Old saved Pot jobs are
+adopted without restarting them. New plantings, tree production cycles and combines
+start with their normal duration and receive subsequent advances normally.
+Daily rewards, quest periods, raids, cooldowns and shop timers continue to use real
+time. Normal rewards and quest progress still occur only through the existing
+harvest/collection logic. Advancing time does not auto-collect or grant rewards.
+
+Advances use the existing durable command queue, account-version checks and writer
+lease. The server acknowledges and saves the change before clients display it;
+normal synchronization/reconnects show the same growth on every device, including
+devices whose wall clocks differ. Duplicate retries apply once. An advance while
+offline cannot be newly queued; an already queued advance follows normal recovery.

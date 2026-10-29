@@ -55,6 +55,75 @@ const bootstrapFixture = (overrides: Record<string, unknown> = {}): any => ({
   ...overrides,
 });
 
+describe("online growth time control", () => {
+  it("requires a supporting server and an available writer before queuing an advance", async () => {
+    vi.useFakeTimers();
+    const fixture = bootstrapFixture({ growthTimeControlEnabled: true });
+    vi.spyOn(api, "bootstrap").mockResolvedValue(fixture);
+    const economy = new EconomyClient(new GameState(), "growth-command");
+    const sync = vi.spyOn(economy, "syncNow").mockReturnValue("sent");
+    expect(economy.submitGrowthAdvance(3_600_000)).toBe(false);
+    await economy.start();
+    expect(economy.submitGrowthAdvance(3_600_000)).toBe(true);
+    expect(pending(economy).map((entry) => entry.command)).toEqual([
+      { type: "farm.advance_growth", milliseconds: 3_600_000 },
+    ]);
+    expect(sync).toHaveBeenCalledOnce();
+    for (const invalid of [0, -1, 0.5, Infinity, NaN, 31_536_000_001]) {
+      expect(economy.submitGrowthAdvance(invalid)).toBe(false);
+    }
+    economy.serverGrowthTimeControlEnabled = false;
+    expect(economy.submitGrowthAdvance(3_600_000)).toBe(false);
+    economy.serverGrowthTimeControlEnabled = true;
+    (economy as any).queue.disable("offline");
+    expect(economy.submitGrowthAdvance(3_600_000)).toBe(false);
+    expect(pending(economy)).toHaveLength(1);
+  });
+
+  it("keeps older servers disabled", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(api, "bootstrap").mockResolvedValue(bootstrapFixture());
+    const economy = new EconomyClient(new GameState(), "old-growth-server");
+    await economy.start();
+    expect(economy.serverGrowthTimeControlEnabled).toBe(false);
+    expect(economy.submitGrowthAdvance(3_600_000)).toBe(false);
+    expect(pending(economy)).toEqual([]);
+  });
+
+  it("shows identical remaining growth after fresh syncs on skewed desktop, phone and tablet clocks", async () => {
+    vi.useFakeTimers();
+    const serverTime = 1_800_000_000_000;
+    const fixture = bootstrapFixture({ serverTime, growthTimeControlEnabled: true });
+    fixture.gameplay.farm = { version: 2, plots: {
+      "0:0": { state: "planted", cropKey: "onion", plantedAt: serverTime - 8 * 3_600_000,
+        growMs: 24 * 3_600_000, sell: 60, xp: 4, fertilized: false, zombie: false },
+      "4:0": { state: "planted", cropKey: "ZombieActorRegularTier1", plantedAt: serverTime - 600_000,
+        growMs: 600_000, sell: 0, xp: 1, fertilized: false, zombie: true },
+    } };
+    fixture.gameplay.objects.objects = [{ instanceId: "tree", catalogKey: "fruitTreeApple", status: "placed", readyAt: serverTime + 15_000 }];
+    fixture.gameplay.potTimers = { pot: { parentAId: "a", parentBId: "b", startedAt: serverTime - 1_800_000, finishAt: serverTime + 1_800_000 } };
+    vi.spyOn(api, "bootstrap").mockResolvedValue(fixture);
+    for (const [device, skew] of [["desktop", 0], ["phone", -5 * 3_600_000], ["tablet", 7 * 3_600_000]] as const) {
+      vi.setSystemTime(serverTime + skew);
+      const economy = new EconomyClient(new GameState(), `growth-${device}`);
+      let farm: api.FarmState | undefined;
+      let treeRemaining = 0;
+      let potRemaining = 0;
+      const order: string[] = [];
+      economy.onFarmState = (projection) => { farm = projection; };
+      economy.onObjectState = (objects) => { treeRemaining = objects[0].readyAt! - Date.now(); };
+      economy.onRosterState = () => { order.push("roster"); };
+      economy.onPotTimerState = (timers) => { potRemaining = timers.pot.finishAt - Date.now(); order.push("timers"); };
+      await economy.start();
+      expect(farm!.crops.map((crop) => Math.max(0, crop.planted_at + crop.grow_ms - Date.now())))
+        .toEqual([16 * 3_600_000, 0]);
+      expect(treeRemaining).toBe(15_000);
+      expect(potRemaining).toBe(1_800_000);
+      expect(order).toEqual(["roster", "timers"]);
+    }
+  });
+});
+
 // The lifetime tally under the online economy. Every case here is a balance that
 // would dip and recover — and used to book on both sides for it.
 describe("lifetime tally under the online economy", () => {

@@ -9,7 +9,7 @@ import type {
   FallenUnitProjection,
   SequencedCommand,
 } from "../../../src/net/protocol";
-import { EPIC_BOSS_TOKEN_GRANT_LIMIT } from "../../../src/net/protocol";
+import { EPIC_BOSS_TOKEN_GRANT_LIMIT, validGrowthAdvance } from "../../../src/net/protocol";
 import plantRows from "../../../public/assets/plants.json";
 import zombieRows from "../../../public/assets/zombies.json";
 import farmerRows from "../../../public/assets/farmer.json";
@@ -54,6 +54,7 @@ import {
   unitSubjectAliases,
 } from "../../../src/quest/mutantSubjects";
 import { encodeReceivedZombie, parseReceivedZombie } from "../../../src/zombie/receivedReward";
+import { POT_DURATION_MS, MONOLITH_MULT } from "../../../src/zombie/potTiming";
 
 /** How many objects one farm may own — placed AND stored, decor included (the name
  *  predates decor going through the same document). Raised 512 -> 1024 on 2026-09-22.
@@ -287,6 +288,7 @@ export interface MutableGameplayState extends GameplayProjection {}
 
 export interface EngineOptions {
   now: number;
+  growthTimeControlEnabled?: boolean;
   random?: () => number;
   id?: () => string;
   /** Seeds the daily/weekly quest roll, so two farms are not handed the same board on
@@ -767,6 +769,31 @@ function applyOne(
   switch (command.type) {
     case "writer.claim":
       return { sequence, status: "applied" };
+    case "farm.advance_growth": {
+      if (!options.growthTimeControlEnabled) return reject(sequence, "growth_time_disabled");
+      if (!validGrowthAdvance(command.milliseconds)) return reject(sequence, "bad_growth_advance");
+      // Equivalent to advancing a farm-only clock: backdate existing plantings.
+      // Persisted in the existing farm document, so saves and every device use the
+      // same truth. Saturate at ripe; repeated advances cannot overflow timestamps.
+      // Future plantings still start at age zero. No other clock or timer moves.
+      for (const plot of Object.values(state.farm.plots)) {
+        if (plot.state !== "planted" || options.now - plot.plantedAt >= plot.growMs) continue;
+        plot.plantedAt = Math.max(options.now - plot.growMs, plot.plantedAt - command.milliseconds);
+      }
+      for (const object of state.objects.objects) {
+        const rule = objectRules.get(object.catalogKey);
+        if (object.status !== "placed" || !rule?.growMs || !rule.harvestValue || object.readyAt === undefined) continue;
+        if (object.readyAt > options.now) object.readyAt = Math.max(options.now, object.readyAt - command.milliseconds);
+      }
+      for (const timer of Object.values(state.potTimers ?? {})) {
+        if (timer.finishAt <= options.now) continue;
+        const advance = Math.min(command.milliseconds, timer.finishAt - options.now);
+        // Shift both endpoints to preserve the job's duration/progress bar.
+        timer.startedAt -= advance;
+        timer.finishAt -= advance;
+      }
+      return { sequence, status: "applied" };
+    }
     case "farm.plow": {
       if (!validCoord(command.oc, state.farmSize) || !validCoord(command.or, state.farmSize)) return reject(sequence, "bad_coord");
       const key = plotKey(command.oc, command.or);
@@ -969,8 +996,11 @@ function applyOne(
         }
       } else if (command.key === "insta_grow") {
         if (command.target === "zombie_pot") {
-          // Zombie Pot timers/jobs are presentation state until collection. The
-          // client emits this command only after finishCombineNow succeeds, while
+          const potId = command.potId ?? Object.keys(state.potTimers ?? {})[0];
+          const timer = potId ? state.potTimers?.[potId] : undefined;
+          if (timer) timer.finishAt = Math.min(timer.finishAt, options.now);
+          // Legacy Pot jobs still live in presentation; private-server timers are
+          // updated above. The client emits this only after finishCombineNow succeeds, while
           // roster.combine separately validates both authoritative parents and
           // derives the result. Requiring a Pot in the functional-object projection
           // here falsely rolls back boosts used on legacy/restored Pots even though
@@ -1231,6 +1261,13 @@ function applyOne(
       // picks the child's species and it is the one thing the collect command an hour
       // later cannot be trusted for. See potSlots.
       state.potSlots = { ...state.potSlots, [command.potId]: a.id };
+      if (options.growthTimeControlEnabled) {
+        const fast = state.objects.objects.some((o) => o.status === "placed" && o.catalogKey === "monolithCombine");
+        state.potTimers = { ...state.potTimers, [command.potId]: {
+          parentAId: a.id, parentBId: b.id, startedAt: options.now,
+          finishAt: options.now + POT_DURATION_MS * (fast ? MONOLITH_MULT : 1),
+        } };
+      }
       events.push(combinerCombined(a, b));
       return { sequence, status: "applied" };
     }
@@ -1301,6 +1338,10 @@ function applyOne(
         const remaining = { ...state.potSlots };
         delete remaining[command.potId];
         state.potSlots = remaining;
+      }
+      if (state.potTimers) {
+        state.potTimers = Object.fromEntries(Object.entries(state.potTimers).filter(([, timer]) =>
+          ![timer.parentAId, timer.parentBId].some((parent) => parent === a.id || parent === b.id)));
       }
       state.roster.push({ id, key: resultKey, mutation, invasions: 0, stored });
       created.push(id);
@@ -1563,6 +1604,7 @@ export function applyCommandBatch(
   const createdZombieIds: string[] = [];
   const required: Required<EngineOptions> = {
     now: options.now,
+    growthTimeControlEnabled: options.growthTimeControlEnabled ?? false,
     random: options.random ?? Math.random,
     id: options.id ?? (() => crypto.randomUUID()),
     accountId: options.accountId ?? "",

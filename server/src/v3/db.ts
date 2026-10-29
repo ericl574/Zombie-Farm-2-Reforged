@@ -4,6 +4,7 @@ import type {
   CommandBatchResponse,
   GameplayProjection,
   PresentationProjection,
+  PotTimerProjection,
   ResumableRaidProjection,
 } from "../../../src/net/protocol";
 import { GAMEPLAY_PROTOCOL } from "../../../src/net/protocol";
@@ -110,6 +111,7 @@ const coreFrom = (state: GameplayProjection) => ({
   // clients, and an older bundle parses its pot id straight out of that string, so
   // decorating it would make those clients read one job as two and retire it.
   potSlots: state.potSlots,
+  potTimers: state.potTimers,
 });
 
 async function ensureV3(db: D1Database, accountId: string, now: number): Promise<void> {
@@ -304,6 +306,7 @@ function project(rows: Awaited<ReturnType<typeof loadRows>>): GameplayProjection
     // one-time guaranteed crop mutation.
     tutorialMutation: core.tutorialMutation ?? false,
     potSlots: core.potSlots ?? {},
+    potTimers: core.potTimers,
     roster,
     fallen,
     raids: { progress: parse(rows.raidState.progress_json, {}), tiers: parse(rows.raidState.tier_json, {}),
@@ -405,7 +408,8 @@ export async function applyBatch(
   db: D1Database,
   accountId: string,
   body: CommandBatchRequest,
-  now: number
+  now: number,
+  growthTimeControlEnabled = false,
 ): Promise<BatchFailure> {
   const rows = await loadRows(db, accountId, now);
   const runtime = rows.runtime;
@@ -472,7 +476,24 @@ export async function applyBatch(
   if (windowCount > 120) return { status: 429, error: "command_rate_limited", body: { retryAfterMs: Math.max(1, windowStart + 60_000 - now) } };
 
   const before = project(rows);
-  const engine = applyCommandBatch(before, body.commands, { now, accountId });
+  if (growthTimeControlEnabled) {
+    // Import timers of jobs saved before the private control existed. Keep the
+    // original deadlines and parent snapshots; no migration or restart is needed.
+    const saved = parse<{ zombiePots?: Record<string, PotTimerProjection>;
+      zombiePot?: PotTimerProjection }>(rows.presentation.current_json, {});
+    const legacyId = before.objects.objects.find((o) => o.catalogKey === "zombieCombiner")?.instanceId ?? "legacy";
+    const jobs = Object.entries(saved.zombiePots ?? {});
+    if (!jobs.length && saved.zombiePot) jobs.push([legacyId, saved.zombiePot]);
+    for (const [id, job] of jobs) {
+      if (before.potTimers?.[id] || !job || !Number.isFinite(job.startedAt) || !Number.isFinite(job.finishAt) || job.finishAt < job.startedAt) continue;
+      const parents = [job.parentAId, job.parentBId].map((parent) => before.roster.find((u) => u.id === parent));
+      if (!job.parentAId || job.parentAId === job.parentBId || parents.some((u) => !u || (u.lockedByRaid && u.lockedByRaid !== `pot:${id}`))) continue;
+      before.potTimers = { ...before.potTimers, [id]: {
+        parentAId: job.parentAId, parentBId: job.parentBId, startedAt: job.startedAt, finishAt: job.finishAt,
+      } };
+    }
+  }
+  const engine = applyCommandBatch(before, body.commands, { now, accountId, growthTimeControlEnabled });
   if (engine.farmChanged) engine.state.farm.version++;
   if (engine.objectChanged) engine.state.objects.version++;
   if (engine.questChanged) engine.state.quests.version++;

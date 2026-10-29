@@ -57,6 +57,8 @@ migrations_dir = "migrations"
 GOOGLE_CLIENT_ID = "249211577622-cmqa6so9re0hgh2lti4mpe40nlcm3l4k.apps.googleusercontent.com"
 ALLOWED_ORIGIN = "http://localhost:5173"
 DEV_AUTH = "1"
+# Private growth control, enabled only on the disposable staging stack.
+GROWTH_TIME_CONTROL = "1"
 MIN_PROTOCOL_VERSION = "3"
 MUTATIONS_DISABLED = "0"
 BLACK_MARKET_ENABLED = "1"

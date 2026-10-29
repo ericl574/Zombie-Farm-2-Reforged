@@ -32,15 +32,11 @@
 // holds at most one job, mirroring the single in-game Zombie Pot building.
 import { OwnedZombieSave, ZombiePotSave } from "../save/schema";
 import { combineMasks } from "./mutations";
+import { POT_DURATION_MS, MONOLITH_MULT } from "./potTiming";
+export { POT_DURATION_MS, MONOLITH_MULT } from "./potTiming";
 import {
   createCombineRandom, selectCombineSpecies, type CombineGraveUnlock,
 } from "./combineSpecies";
-
-/** Default combine duration: 1 hour, in ms (binary: getCombineTime = 3600.0 s). */
-export const POT_DURATION_MS = 60 * 60 * 1000;
-/** Clay Monolith multiplier on the combine timer: 0.25× -> 15 min (binary:
- *  getCombineTime returns 900.0 s when purchase flag 28 = Clay Monolith is set). */
-export const MONOLITH_MULT = 0.25;
 
 /** What a finished combine yields: a species key + the child's mutation mask. */
 export interface PotResult {

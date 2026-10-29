@@ -5,8 +5,10 @@ import { CommandQueue } from "./commandQueue";
 import {
   EPIC_BOSS_TOKEN_GRANT_LIMIT,
   FARM_BULK_LIMIT,
+  validGrowthAdvance,
   type BootstrapResponse, type CommandBatchResponse, type GameplayCommand,
   type PeriodicQuestProjection,
+  type PotTimerProjection,
 } from "./protocol";
 import type { RaidOutcome } from "../raid/types";
 import { RAID_RULESET_VERSION } from "../raid/replay";
@@ -23,6 +25,7 @@ export interface InventoryInput {
   oc?: number;
   or?: number;
   target?: "zombie_pot";
+  potId?: string;
 }
 
 export type RosterInput =
@@ -129,6 +132,7 @@ export class EconomyClient {
   onPeriodicQuestState: ((state: PeriodicQuestProjection | null) => void) | null = null;
   onCropFertilized: ((oc: number, or: number) => void) | null = null;
   onFarmState: ((farm: api.FarmState) => void) | null = null;
+  onPotTimerState: ((timers: Record<string, PotTimerProjection>) => void) | null = null;
   /** Resolving `false` means a newer reconcile superseded this pass before it consumed
    *  `aliases`, and this client must keep them for the next one. Any other result (or a
    *  synchronous handler) means they were applied and may be dropped. */
@@ -236,6 +240,7 @@ export class EconomyClient {
       // boot only — the client's Invasions surfaces follow the Worker's PVP_ENABLED
       // flag, so launching (or parking) PvP never needs a client redeploy.
       this.serverPvpEnabled = bootstrap.pvpEnabled === true;
+      this.serverGrowthTimeControlEnabled = bootstrap.growthTimeControlEnabled === true;
       // When this farm was last invaded, for the Social dots (social/badges.ts). Read
       // at boot only: the badge answers "anything happened while I was away?", and a
       // fight that settles mid-session is one the player is present for.
@@ -264,6 +269,7 @@ export class EconomyClient {
   /** Whether the deployed Worker accepts friend invasions (bootstrap `pvpEnabled`).
    *  False until the first successful bootstrap. */
   serverPvpEnabled = false;
+  serverGrowthTimeControlEnabled = false;
 
   /** When the newest settled invasion against this farm finished, on the SERVER clock
    *  (bootstrap `social.lastInvadedAt`). Null until the first successful bootstrap,
@@ -677,6 +683,14 @@ export class EconomyClient {
     return sequence;
   }
 
+  /** Use the normal durable, ordered writer queue; display changes only after acknowledgement. */
+  submitGrowthAdvance(milliseconds: number): boolean {
+    if (!this.serverGrowthTimeControlEnabled || !this.available || !validGrowthAdvance(milliseconds)) return false;
+    if (this.enqueue({ type: "farm.advance_growth", milliseconds }) === null) return false;
+    this.syncNow();
+    return true;
+  }
+
   submitFarm(input: FarmActionInput, optimistic: { gold?: number; brains?: number; xp?: number }): void {
     // Plow, plant and harvest always go out in their BULK form, even for a single plot,
     // so the next plot the farmer finishes has something to fold into.
@@ -734,7 +748,8 @@ export class EconomyClient {
     if (input.type === "grant") return; // grants are emitted only by server subsystems
     const command: GameplayCommand = input.type === "buy"
       ? { type: "power.buy", key: input.key }
-      : { type: "power.use", key: input.key, oc: input.oc, or: input.or, target: input.target };
+      : { type: "power.use", key: input.key, oc: input.oc, or: input.or, target: input.target,
+          ...(input.potId ? { potId: input.potId } : {}) };
     const sequence = this.enqueue(command, {
       gold: optimistic.gold,
       brains: optimistic.brains,
@@ -1458,6 +1473,13 @@ export class EconomyClient {
         { ...this.deferredRosterAliases, ...aliases },
         this.queue.size === 0,
       );
+      if (gameplay.potTimers) {
+        this.onPotTimerState?.(Object.fromEntries(Object.entries(gameplay.potTimers).map(([id, timer]) => [id, {
+          ...timer,
+          startedAt: timer.startedAt + clientTime - serverTime,
+          finishAt: timer.finishAt + clientTime - serverTime,
+        }])));
+      }
       this.deferredRosterAliases = {};
       this.onEpicBossState?.(this.withPendingBossTokens(
         epicBossRunToClient(gameplay.epicBoss, serverTime, clientTime)

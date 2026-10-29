@@ -16,6 +16,7 @@ import { GAMEPLAY_PROTOCOL, type GameplayCommand } from "../../src/net/protocol"
  *  every player who moved a plot bricked their own account. */
 const SAMPLES: Record<GameplayCommand["type"], GameplayCommand> = {
   "writer.claim": { type: "writer.claim" },
+  "farm.advance_growth": { type: "farm.advance_growth", milliseconds: 3_600_000 },
   "farm.plow": { type: "farm.plow", oc: 0, or: 0 },
   "farm.plant": { type: "farm.plant", oc: 0, or: 0, cropKey: "carrot", fertilized: true },
   "farm.plow_many": { type: "farm.plow_many", plots: [{ oc: 0, or: 0 }, { oc: 4, or: 0 }] },
@@ -28,7 +29,7 @@ const SAMPLES: Record<GameplayCommand["type"], GameplayCommand> = {
   "farm.remove": { type: "farm.remove", oc: 0, or: 0 },
   "farm.move": { type: "farm.move", oc: 0, or: 0, toOc: 8, toOr: 4 },
   "power.buy": { type: "power.buy", key: "fertilizer" },
-  "power.use": { type: "power.use", key: "fertilizer", oc: 0, or: 0, target: "zombie_pot" },
+  "power.use": { type: "power.use", key: "fertilizer", oc: 0, or: 0, target: "zombie_pot", potId: "pot-1" },
   "object.buy": { type: "object.buy", catalogKey: "tree", clientInstanceId: "local-1" },
   "object.refund": { type: "object.refund", instanceId: "obj-1" },
   "object.upgrade": { type: "object.upgrade", instanceId: "obj-1", catalogKey: "tree2" },
@@ -63,6 +64,11 @@ const SAMPLES: Record<GameplayCommand["type"], GameplayCommand> = {
 };
 
 describe("gameplay command validation", () => {
+  it.each([0, -1, 0.5, NaN, Infinity, 31_536_000_001, "3600000", null, undefined])(
+    "rejects invalid growth milliseconds %s", (milliseconds) => {
+      expect(validGameplayCommand({ type: "farm.advance_growth", milliseconds })).toBe(false);
+    }
+  );
   it.each(Object.keys(SAMPLES))("accepts %s", (type) => {
     expect(validGameplayCommand(SAMPLES[type as GameplayCommand["type"]])).toBe(true);
   });
@@ -86,6 +92,7 @@ describe("gameplay command validation", () => {
     expect(validGameplayCommand({ type: "farm.move", oc: 0, or: 0 })).toBe(false);
     expect(validGameplayCommand({ type: "farm.move", oc: 0, or: 0, toOc: 1.5, toOr: 0 })).toBe(false);
     expect(validGameplayCommand({ type: "farm.plow", oc: "0", or: 0 })).toBe(false);
+    expect(validGameplayCommand({ type: "power.use", key: "insta_grow", target: "zombie_pot", potId: 1 })).toBe(false);
     expect(validGameplayCommand({ type: "nonsense.command" })).toBe(false);
     // Unverified is not unbounded: the count still has to be a sane whole number.
     expect(validGameplayCommand({ type: "epicBoss.token", runId: "run-1", count: 0 })).toBe(false);

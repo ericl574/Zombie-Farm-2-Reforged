@@ -2127,7 +2127,7 @@ async function main() {
     if (!def) return false;
     if (state.boostCount(def.key) <= 0) { hud.setMode("walk"); return false; }
     if (target.kind === "pot" && zombies.finishCombineNow(target.instanceId)) {
-      if (state.onInventory) state.onInventory({ type: "use", key: def.key, target: "zombie_pot" }, { count: -1 });
+      if (state.onInventory) state.onInventory({ type: "use", key: def.key, target: "zombie_pot", potId: target.instanceId }, { count: -1 });
       else state.useBoost(def.key);
       audio.play("instaGrow");
       const p = field.objectWorkPoint(target.instanceId);
@@ -2654,7 +2654,11 @@ async function main() {
     // The invasion dot needs the bootstrap's `social.lastInvadedAt`. Wired here, beside
     // the other economy callbacks and well before `economy.start()`, because boot fires
     // its social pulls independently — nothing downstream may assume one order.
-    economy.onBootstrapped = () => hud.refreshSocialBadges();
+    economy.onBootstrapped = () => {
+      hud.refreshSocialBadges();
+      hud.setGrowthTimeControl(economy!.serverGrowthTimeControlEnabled);
+    };
+    hud.onGrowthAdvance = (milliseconds) => economy!.submitGrowthAdvance(milliseconds);
     economy.onPendingChange = (pending) => {
       outboxPending = pending;
       if (economy?.available) refreshPlayStatus?.();
@@ -2866,6 +2870,7 @@ async function main() {
       const hidden = new Set(zombies.pendingPotParents().flatMap((pot) => [pot.parentAId, pot.parentBId]));
       zombies.reconcileServerRoster(roster.filter((unit) => !hidden.has(unit.id)), aliases);
     };
+    economy.onPotTimerState = (timers) => zombies.reconcilePotTimers(timers);
     economy.onRaidRevival = (offer, brains) => {
       const current = new Map(zombies.roster().map((zombie) => [zombie.id, zombie]));
       const casualties = offer.zombies.flatMap((snapshot) => {
@@ -4107,7 +4112,7 @@ async function main() {
     const potId = activePotId ?? field.zombiePotId();
     if (!potId || !zombies.finishCombineNow(potId)) return false;
     if (state.onInventory) {
-      state.onInventory({ type: "use", key: def.key, target: "zombie_pot" }, { count: -1 });
+      state.onInventory({ type: "use", key: def.key, target: "zombie_pot", potId }, { count: -1 });
     } else state.useBoost(def.key);
     audio.play("instaGrow");
     const point = field.objectWorkPoint(potId);
