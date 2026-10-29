@@ -1,0 +1,54 @@
+# PRIVATE deployment only. Fill the REQUIRED_* values using your own account.
+# No interpolation: Wrangler reads these literal values. Do not deploy placeholders.
+# Use the guarded root-level npm commands documented in PRIVATE_DEPLOYMENT.md.
+name = "eric-zf-api"
+account_id = "d78b91d885436a98bcd32760c10df752"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "eric-zf-db"
+database_id = "c4df31ef-d87d-4cca-a5d0-70fd3c606d1c"
+migrations_dir = "migrations"
+
+[vars]
+GOOGLE_CLIENT_ID = "25281727548-vuh4fta100bpk1noeqteu81nutr11e60.apps.googleusercontent.com"
+ALLOWED_ORIGIN = "https://eric-zf-farm.pages.dev"
+DEV_AUTH = "0"
+GROWTH_TIME_CONTROL = "1"
+MIN_PROTOCOL_VERSION = "3"
+MUTATIONS_DISABLED = "0"
+BLACK_MARKET_ENABLED = "1"
+PVP_ENABLED = "1"
+PVP_DEFENSE_MODE = "formation"
+WRITER_LEASE_MODE = "enforce"
+# RAID_COOLDOWN_MS intentionally omitted: preserve the normal two-hour default.
+# SESSION_SECRET must be uploaded as a Worker secret, never placed in this file.
+
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[[unsafe.bindings]]
+name = "RL_AUTH"
+type = "ratelimit"
+namespace_id = "3001"
+simple = { limit = 60, period = 60 }
+
+[[unsafe.bindings]]
+name = "RL_WRITE"
+type = "ratelimit"
+namespace_id = "3002"
+simple = { limit = 120, period = 60 }
+
+[[unsafe.bindings]]
+name = "RL_READ"
+type = "ratelimit"
+namespace_id = "3003"
+simple = { limit = 300, period = 60 }
+
+[triggers]
+crons = ["17 3 * * *"]

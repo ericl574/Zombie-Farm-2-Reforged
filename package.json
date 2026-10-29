@@ -6,6 +6,13 @@
   "type": "module",
   "description": "Zombie Farm Reforged - browser reimplementation with optional online mode",
   "scripts": {
+    "private:check": "node server/scripts/private-deploy.mjs check",
+    "private:plan": "node server/scripts/private-deploy.mjs plan",
+    "private:dry-run": "node server/scripts/private-deploy.mjs dry-run",
+    "private:build-preflight": "node tools/private-build-preflight.mjs",
+    "build:private": "node server/scripts/private-deploy.mjs build",
+    "deploy:private:worker": "node server/scripts/private-deploy.mjs deploy-worker",
+    "deploy:private:frontend": "node server/scripts/private-deploy.mjs deploy-frontend",
     "dev": "vite",
     "review:zombies": "vite --open /zombie-review.html",
     "build": "tsc && vite build",

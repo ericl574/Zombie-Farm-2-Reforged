@@ -6,7 +6,7 @@ import { defineConfig } from "vitest/config";
 // because they need the Cloudflare Workers pool (workerd + real D1).
 export default defineConfig({
   test: {
-    include: ["test/**/*.test.ts"],
+    include: ["test/**/*.test.ts", "test/**/*.test.mjs"],
     exclude: ["test/integration/**", "node_modules/**"],
   },
 });

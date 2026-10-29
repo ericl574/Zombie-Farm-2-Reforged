@@ -266,6 +266,9 @@ and prod's are declared separately). Live at
 
 ## Private Online Farm growth control
 
+For isolated account configuration, guarded deployment commands and the exact
+required inputs, follow [Private Cloudflare deployment](../PRIVATE_DEPLOYMENT.md).
+
 Set the Worker variable `GROWTH_TIME_CONTROL = "1"` on your private server to enable
 the Online Farm **Time** button (+1h, +4h, +8h, +24h, or custom hours from 0.01 to
 8760). The default/staging configuration enables it; production does not. Other
