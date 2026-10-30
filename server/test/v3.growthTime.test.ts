@@ -32,7 +32,7 @@ describe("private farm growth advancement", () => {
     }
   });
 
-  it("preserves every non-growth field and emits no quest/reward events", () => {
+  it("only changes growth and invasion cooldown timers and emits no quest/reward events", () => {
     const before = plant();
     before.farm.plots["8:0"] = { state: "spent" };
     before.farm.plots["12:0"] = { state: "plowed" };
@@ -40,12 +40,36 @@ describe("private farm growth advancement", () => {
     before.raids.lastRaidAt = NOW;
     before.potSlots = { pot: "parent-a" };
     const result = run(before, { type: "farm.advance_growth", milliseconds: 24 * HOUR });
-    expect({ ...result.state, farm: before.farm }).toEqual(before);
+    expect({ ...result.state, farm: before.farm }).toEqual({
+      ...before, raids: { ...before.raids, lastRaidAt: NOW - 24 * HOUR },
+    });
     expect(result.state.farm.plots["8:0"]).toEqual(before.farm.plots["8:0"]);
     expect(result.state.farm.plots["12:0"]).toEqual(before.farm.plots["12:0"]);
     expect(result.questChanges).toEqual([]);
     expect(result.createdZombieIds).toEqual([]);
     expect(result.objectChanged).toBe(false);
+  });
+
+  it.each([1, 4, 8, 24, 1.25])("shortens an invasion cooldown by %sh without changing raid progress", (hours) => {
+    const before = freshGameplayState();
+    before.raids.lastRaidAt = NOW;
+    const result = run(before, { type: "farm.advance_growth", milliseconds: hours * HOUR });
+    expect(result.results[0].status).toBe("applied");
+    expect(result.state.raids).toEqual({ ...before.raids, lastRaidAt: NOW - hours * HOUR });
+    expect(Math.max(0, result.state.raids.lastRaidAt + 2 * HOUR - NOW))
+      .toBe(Math.max(0, (2 - hours) * HOUR));
+    expect(before.raids.lastRaidAt).toBe(NOW);
+  });
+
+  it("caps repeated invasion advances at zero and keeps a never-used cooldown ready", () => {
+    const before = freshGameplayState();
+    before.raids.lastRaidAt = HOUR;
+    const advanced = run(before, { type: "farm.advance_growth", milliseconds: 24 * HOUR });
+    expect(advanced.state.raids.lastRaidAt).toBe(0);
+    const repeated = run(advanced.state, { type: "farm.advance_growth", milliseconds: 24 * HOUR });
+    expect(repeated.state.raids.lastRaidAt).toBe(0);
+    const fresh = run(freshGameplayState(), { type: "farm.advance_growth", milliseconds: 24 * HOUR });
+    expect(fresh.state.raids.lastRaidAt).toBe(0);
   });
 
   it("gates harvest, then harvests, replows and replants at age zero in command order", () => {
@@ -75,13 +99,16 @@ describe("private farm growth advancement", () => {
 
   it("defaults off and rejects invalid advances without changing growth", () => {
     const state = plant();
+    state.raids.lastRaidAt = NOW;
     const disabled = applyCommandBatch(state, commands({ type: "farm.advance_growth", milliseconds: HOUR }), { now: NOW });
     expect(disabled.results[0].error).toBe("growth_time_disabled");
     expect(disabled.state.farm).toEqual(state.farm);
+    expect(disabled.state.raids).toEqual(state.raids);
     for (const milliseconds of [0, -1, 0.5, NaN, Infinity, MAX_GROWTH_ADVANCE_MS + 1]) {
       const result = run(state, { type: "farm.advance_growth", milliseconds });
       expect(result.results[0].error).toBe("bad_growth_advance");
       expect(result.state.farm).toEqual(state.farm);
+      expect(result.state.raids).toEqual(state.raids);
     }
   });
 

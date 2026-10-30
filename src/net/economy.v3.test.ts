@@ -102,10 +102,12 @@ describe("online growth time control", () => {
     } };
     fixture.gameplay.objects.objects = [{ instanceId: "tree", catalogKey: "fruitTreeApple", status: "placed", readyAt: serverTime + 15_000 }];
     fixture.gameplay.potTimers = { pot: { parentAId: "a", parentBId: "b", startedAt: serverTime - 1_800_000, finishAt: serverTime + 1_800_000 } };
+    fixture.gameplay.raids.lastRaidAt = serverTime - 3_600_000;
     vi.spyOn(api, "bootstrap").mockResolvedValue(fixture);
     for (const [device, skew] of [["desktop", 0], ["phone", -5 * 3_600_000], ["tablet", 7 * 3_600_000]] as const) {
       vi.setSystemTime(serverTime + skew);
-      const economy = new EconomyClient(new GameState(), `growth-${device}`);
+      const state = new GameState();
+      const economy = new EconomyClient(state, `growth-${device}`);
       let farm: api.FarmState | undefined;
       let treeRemaining = 0;
       let potRemaining = 0;
@@ -119,6 +121,7 @@ describe("online growth time control", () => {
         .toEqual([16 * 3_600_000, 0]);
       expect(treeRemaining).toBe(15_000);
       expect(potRemaining).toBe(1_800_000);
+      expect(Date.now() - state.lastRaidAt).toBe(3_600_000);
       expect(order).toEqual(["roster", "timers"]);
     }
   });

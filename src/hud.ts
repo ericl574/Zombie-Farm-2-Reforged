@@ -835,10 +835,10 @@ export class Hud {
     this.growthTimeButton.className = "growth-time-button";
     this.growthTimeButton.textContent = "Time";
     this.growthTimeButton.hidden = true;
-    this.growthTimeButton.setAttribute("aria-label", "Advance crop, zombie, tree and Zombie Pot growth time");
+    this.growthTimeButton.setAttribute("aria-label", "Advance crop, zombie, tree and Zombie Pot growth time and Invade cooldown");
     this.growthTimeButton.onclick = () => openGrowthTime(this.el, (milliseconds) => {
       if (!this.onGrowthAdvance?.(milliseconds)) return false;
-      this.showToast("Growth time queued — syncing…");
+      this.showToast("Time advance queued — syncing…");
       return true;
     });
     bar.append(gear, chips, spacer, ...(devHot ? [devHot] : []), this.playStatusEl, name, prof, this.growthTimeButton);

@@ -1,8 +1,68 @@
 import { describe, expect, it } from "vitest";
 import type { BootstrapResponse, CommandBatchResponse, GameplayCommand } from "../../../src/net/protocol";
 import { call, commandBody, grantBalance, grantRoster, signIn, uniqueSub } from "./helpers";
+import { RAID_RULESET_VERSION } from "../../../src/raid/replay";
 
 describe("growth control over HTTP and D1", () => {
+  it("persists invasion cooldown advances once across devices and starts the next cooldown normally", async () => {
+    const sub = uniqueSub("invasion-time");
+    const owner = await signIn(sub);
+    await grantRoster(owner, [{ id: "invasion-time-zombie", key: "ZombieActorRegularTier1", stored: false }]);
+    const invasion = {
+      raidId: 1, orderedUnitIds: ["invasion-time-zombie"], rulesetVersion: RAID_RULESET_VERSION,
+    };
+    const start = () => call<any>("POST", "/raid/start", owner.token, invasion);
+    const retreat = (sessionId: string) => call("POST", "/raid/finish", owner.token, {
+      sessionId, finalTick: 0, inputs: [{ seq: 1, tick: 0, type: "retreat" }], clientWin: false,
+    });
+    const boot = async (token = owner.token) => {
+      const response = await call<BootstrapResponse>("POST", "/bootstrap", token, {});
+      expect(response.status).toBe(200);
+      return response.body;
+    };
+    const started = await start();
+    expect(started.status, JSON.stringify(started.body)).toBe(200);
+    expect((await retreat(started.body.sessionId)).status).toBe(200);
+    const before = await boot();
+    const blockedBefore = await start();
+    expect(blockedBefore).toMatchObject({ status: 429, body: { error: "cooldown" } });
+
+    const partialBody = commandBody(before, uniqueSub("invasion-partial"), 1,
+      [{ type: "farm.advance_growth", milliseconds: 3_600_000 }]);
+    const partial = await call<CommandBatchResponse>("POST", "/commands", owner.token, partialBody);
+    expect(partial.status).toBe(200);
+    expect(partial.body.results[0].status).toBe("applied");
+    expect(partial.body.gameplay.raids).toEqual({
+      ...before.gameplay.raids, lastRaidAt: before.gameplay.raids.lastRaidAt - 3_600_000,
+    });
+    expect(partial.body.gameplay.balance).toEqual(before.gameplay.balance);
+    expect(partial.body.gameplay.quests).toEqual(before.gameplay.quests);
+    expect(partial.body.gameplay.periodicQuests).toEqual(before.gameplay.periodicQuests);
+    const duplicate = await call<CommandBatchResponse>("POST", "/commands", owner.token, partialBody);
+    expect(duplicate.status).toBe(200);
+    expect(duplicate.body.gameplay.raids).toEqual(partial.body.gameplay.raids);
+    const other = await signIn(sub, false);
+    expect((await boot(other.token)).gameplay.raids).toEqual(partial.body.gameplay.raids);
+    const blockedAfter = await start();
+    expect(blockedAfter).toMatchObject({ status: 429, body: { error: "cooldown" } });
+    expect(blockedAfter.body.cooldownRemaining).toBeGreaterThan(0);
+    expect(blockedAfter.body.cooldownRemaining).toBeLessThanOrEqual(blockedBefore.body.cooldownRemaining - 3_600_000);
+
+    const ready = await call<CommandBatchResponse>("POST", "/commands", owner.token,
+      commandBody(await boot(), uniqueSub("invasion-ready"), 2,
+        [{ type: "farm.advance_growth", milliseconds: 24 * 3_600_000 }]));
+    expect(ready.status).toBe(200);
+    expect(ready.body.results[0].status).toBe("applied");
+    expect((await boot(other.token)).gameplay.raids).toEqual(ready.body.gameplay.raids);
+    const next = await start();
+    expect(next.status, JSON.stringify(next.body)).toBe(200);
+    expect((await retreat(next.body.sessionId)).status).toBe(200);
+    expect((await boot(other.token)).gameplay.raids.lastRaidAt).toBe(next.body.lastRaidAt);
+    const freshCooldown = await start();
+    expect(freshCooldown).toMatchObject({ status: 429, body: { error: "cooldown" } });
+    expect(freshCooldown.body.cooldownRemaining).toBeGreaterThan(3_600_000);
+  });
+
   it("persists tree and Pot advancement, preserves collection, and starts fresh production/jobs", async () => {
     const sub = uniqueSub("tree-pot-growth");
     const owner = await signIn(sub);

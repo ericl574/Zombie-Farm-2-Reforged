@@ -775,7 +775,8 @@ function applyOne(
       // Equivalent to advancing a farm-only clock: backdate existing plantings.
       // Persisted in the existing farm document, so saves and every device use the
       // same truth. Saturate at ripe; repeated advances cannot overflow timestamps.
-      // Future plantings still start at age zero. No other clock or timer moves.
+      // Future plantings still start at age zero. Also backdate the last invasion
+      // to shorten its cooldown; no server clock or unrelated deadline moves.
       for (const plot of Object.values(state.farm.plots)) {
         if (plot.state !== "planted" || options.now - plot.plantedAt >= plot.growMs) continue;
         plot.plantedAt = Math.max(options.now - plot.growMs, plot.plantedAt - command.milliseconds);
@@ -792,6 +793,7 @@ function applyOne(
         timer.startedAt -= advance;
         timer.finishAt -= advance;
       }
+      state.raids.lastRaidAt = Math.max(0, state.raids.lastRaidAt - command.milliseconds);
       return { sequence, status: "applied" };
     }
     case "farm.plow": {

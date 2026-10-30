@@ -3,16 +3,16 @@ import { openModal } from "../Modal";
 
 export function openGrowthTime(host: HTMLElement, advance: (milliseconds: number) => boolean): void {
   const { panel, close } = openModal({
-    host, title: "Growth Time", panelClass: "growth-time-panel",
+    host, title: "Time Control", panelClass: "growth-time-panel",
     bgClass: "growth-time-bg", replaceSelector: ".growth-time-bg",
   });
   const note = document.createElement("p");
-  note.textContent = "Advance crops, zombies, tree production and running Zombie Pot combines. New plantings and jobs start with their full growth time.";
+  note.textContent = "Advance crops, zombies, tree production, running Zombie Pot combines and the Invade cooldown. New plantings, jobs and invasions start with their normal timers.";
   const status = document.createElement("p");
   status.setAttribute("role", "status");
   const submit = (milliseconds: number) => {
     if (advance(milliseconds)) close();
-    else status.textContent = "Connect to your Online Farm and sync before advancing growth.";
+    else status.textContent = "Connect to your Online Farm and sync before advancing time.";
   };
   const presets = document.createElement("div");
   presets.className = "growth-time-presets";

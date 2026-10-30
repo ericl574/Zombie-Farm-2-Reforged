@@ -160,7 +160,9 @@ root, outside the server's original Wrangler project, with the account explicitl
 set. A mismatched shell `CLOUDFLARE_ACCOUNT_ID` blocks the guarded commands.
 
 The private config enables `GROWTH_TIME_CONTROL="1"` while retaining PvP,
-formation defense, Black Market, normal cooldowns, logging and daily cleanup.
+formation defense, Black Market, logging and daily cleanup. Time advances also
+shorten the Invade cooldown; new invasions start their normal cooldown. Other
+cooldowns and active raid deadlines remain unchanged.
 Reload clients after enabling it: `/bootstrap` must report
 `growthTimeControlEnabled: true`. Normal collection/reward logic remains unchanged.
 

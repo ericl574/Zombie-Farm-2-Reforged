@@ -277,13 +277,17 @@ Worker to your own hosting only, after approval; no database migration is needed
 
 Each advance backdates currently planted crop/zombie timestamps, placed tree
 production deadlines, and running Zombie Pot timers, stopping at ready. The
-existing D1 farm/object documents and an optional `potTimers` field in the gameplay
-JSON persist these changes without a schema migration. Old saved Pot jobs are
+same advance shortens the Invade cooldown by backdating the last invasion timestamp
+in the existing raid-state row. A new invasion starts its normal cooldown; excess
+advancement is not saved for future invasions. The existing D1 farm/object documents
+and an optional `potTimers` field in the gameplay JSON persist growth changes without
+a schema migration. Old saved Pot jobs are
 adopted without restarting them. New plantings, tree production cycles and combines
 start with their normal duration and receive subsequent advances normally.
-Daily rewards, quest periods, raids, cooldowns and shop timers continue to use real
-time. Normal rewards and quest progress still occur only through the existing
-harvest/collection logic. Advancing time does not auto-collect or grant rewards.
+Daily rewards, quest periods, active raid deadlines, other cooldowns and shop timers
+continue to use real time. Normal rewards and quest progress still occur only
+through the existing harvest/collection logic. Advancing time does not auto-collect
+or grant rewards.
 
 Advances use the existing durable command queue, account-version checks and writer
 lease. The server acknowledges and saves the change before clients display it;
